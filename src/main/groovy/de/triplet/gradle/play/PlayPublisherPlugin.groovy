@@ -40,6 +40,7 @@ class PlayPublisherPlugin implements Plugin<Project> {
             def bootstrapTaskName = "bootstrap${variationName}PlayResources"
             def playResourcesTaskName = "generate${variationName}PlayResources"
             def publishApkTaskName = "publishApk${variationName}"
+            def validateApkTaskName = "validateApk${variationName}"
             def publishListingTaskName = "publishListing${variationName}"
             def publishTaskName = "publish${variationName}"
 
@@ -90,6 +91,13 @@ class PlayPublisherPlugin implements Plugin<Project> {
                 publishApkTask.inputFolder = playResourcesTask.outputFolder
                 publishApkTask.description = "Uploads the APK for the ${variationName} build"
                 publishApkTask.group = PLAY_STORE_GROUP
+
+                def validateApkTask = project.tasks.create(validateApkTaskName, ValidatePublishApkTask)
+                validateApkTask.extension = extension
+                validateApkTask.variant = variant
+                validateApkTask.inputFolder = playResourcesTask.outputFolder
+                validateApkTask.description = "Validates play store update for the ${variationName} build"
+                validateApkTask.group = PLAY_STORE_GROUP
 
                 def publishTask = project.tasks.create(publishTaskName)
                 publishTask.description = "Updates APK and play store listing for the ${variationName} build"

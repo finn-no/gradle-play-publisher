@@ -1,6 +1,8 @@
 package de.triplet.gradle.play
 
 import com.android.build.gradle.api.ApkVariantOutput
+import com.google.api.client.googleapis.json.GoogleJsonError
+import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import com.google.api.client.http.FileContent
 import com.google.api.services.androidpublisher.model.Apk
 import com.google.api.services.androidpublisher.model.ApkListing
@@ -19,21 +21,45 @@ class PlayPublishApkTask extends PlayPublishTask {
     publishApks() {
         super.publish()
 
-        List<Integer> versionCodes = new ArrayList<Integer>()
+        try {
+            List<Integer> versionCodes = new ArrayList<Integer>()
 
-        variant.outputs
-            .findAll { variantOutput -> variantOutput instanceof ApkVariantOutput }
-            .each { variantOutput -> versionCodes.add(publishApk(new FileContent(MIME_TYPE_APK, variantOutput.outputFile)).getVersionCode())}
+            variant.outputs
+                    .findAll { variantOutput -> variantOutput instanceof ApkVariantOutput }
+                    .each { variantOutput -> versionCodes.add(publishApk(new FileContent(MIME_TYPE_APK, variantOutput.outputFile)).getVersionCode()) }
 
-        Track track = new Track().setVersionCodes(versionCodes)
-        if (extension.track?.equals("rollout")) {
-            track.setUserFraction(extension.userFraction)
+            Track track = new Track().setVersionCodes(versionCodes)
+            if (extension.track?.equals("rollout")) {
+                def oldTrack = edits.tracks()
+                        .list(variant.applicationId, editId)
+                        .execute()
+                        .getTracks()
+                        .find() { oldTrack -> oldTrack.getTrack().equals("rollout") }
+
+                if (oldTrack != null) {
+                    track.setUserFraction(oldTrack.getUserFraction())
+                } else {
+                    track.setUserFraction(extension.userFraction as Double)
+                }
+            }
+            edits.tracks()
+                    .update(variant.applicationId, editId, extension.track, track)
+                    .execute()
+
+            commit(edits, variant.applicationId, editId)
+        } catch (GoogleJsonResponseException e) {
+
+            List<GoogleJsonError.ErrorInfo> errors = ((GoogleJsonResponseException) e).getDetails().getErrors();
+            if (!(errors.size() == 1 && "apkUpgradeVersionConflict".equals(errors.get(0).getReason()) && errors.get(0)
+                    .getMessage()
+                    .contains("APK specifies a version code that has already been used."))) {
+                throw e;
+            }
         }
-        edits.tracks()
-                .update(variant.applicationId, editId, extension.track, track)
-                .execute()
+    }
 
-        edits.commit(variant.applicationId, editId).execute()
+    def commit(edits, applicationId, editId) {
+        edits.commit(applicationId, editId).execute()
     }
 
     def Apk publishApk(apkFile) {
