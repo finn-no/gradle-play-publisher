@@ -1,15 +1,24 @@
 buildscript {
     repositories {
         mavenCentral()
+        maven {
+            url 'https://artifacts.schibsted.io/artifactory/plugins-release'
+            credentials {
+                username = System.getenv('ARTIFACTORY_USER') ?: ""
+                password = System.getenv('ARTIFACTORY_PASS') ?: ""
+            }
+        }
     }
 
     dependencies {
         classpath 'org.gradle.api.plugins:gradle-nexus-plugin:0.3'
+        classpath "org.jfrog.buildinfo:build-info-extractor-gradle:4+"
     }
 }
 
 apply plugin: 'groovy'
-apply from: 'gradle-mvn-push.gradle'
+apply plugin: "com.jfrog.artifactory"
+apply plugin: 'maven-publish'
 
 group = GROUP
 version = VERSION_NAME
@@ -36,12 +45,24 @@ dependencies {
     testCompile 'org.hamcrest:hamcrest-library:1.3'
 }
 
-afterEvaluate { project ->
-    uploadArchives {
-        repositories {
-            mavenDeployer {
+publishing {
+    publications {
+        jar(MavenPublication) {
+            artifact sourcesJar
+            artifact javadocsJar
 
-                pom.project {
+            pom.withXml {
+                asNode().children().last() + {
+                    resolveStrategy = DELEGATE_FIRST
+                    name POM_NAME
+                    packaging POM_PACKAGING
+                    description POM_DESCRIPTION
+                    url POM_URL
+                    scm {
+                        url POM_SCM_URL
+                        connection POM_SCM_CONNECTION
+                        developerConnection POM_SCM_DEV_CONNECTION
+                    }
                     developers {
                         developer {
                             id 'bhurling'
@@ -53,13 +74,43 @@ afterEvaluate { project ->
                         }
                     }
                 }
-
-                pom.whenConfigured { pom ->
-                    pom.dependencies = pom.dependencies.findAll { dep ->
-                        dep.scope != 'test'
-                    }
-                }
             }
         }
     }
+}
+
+artifactory {
+    contextUrl = "${ARTIFACTORY_CONTEXTURL}"
+    publish {
+        repository {
+            repoKey = 'libs-release-local'
+            username = System.getenv('ARTIFACTORY_USER') ?: ""
+            password = System.getenv('ARTIFACTORY_PASS') ?: ""
+            maven = true
+
+            defaults {
+                publications 'jar'
+            }
+
+            publishArtifacts = true
+        }
+    }
+    resolve {
+        repository {
+            repoKey = 'libs-release'
+            username = System.getenv('ARTIFACTORY_USER') ?: ""
+            password = System.getenv('ARTIFACTORY_PASS') ?: ""
+            maven = true
+        }
+    }
+}
+
+task javadocsJar(type: Jar, dependsOn: javadoc) {
+    classifier = 'javadoc'
+    from javadoc.destinationDir
+}
+
+task sourcesJar(type: Jar) {
+    classifier = 'sources'
+    from sourceSets.main.allGroovy
 }
